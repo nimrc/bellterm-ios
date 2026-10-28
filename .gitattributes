@@ -1,0 +1,3 @@
+# Third-party licence texts ship verbatim, trailing spaces included.
+app/fonts/*.txt -whitespace
+app/src/test/resources/*.bin binary

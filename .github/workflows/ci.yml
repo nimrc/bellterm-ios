@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # libghostty-vt-sys builds Ghostty with Zig; its pinned commit needs 0.15.2.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.2
+
+      # rust-toolchain.toml pins the version, components, and iOS targets.
+      - name: Install Rust
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Format, lint, and test
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --locked --all-targets -- -D warnings
+          cargo test --workspace --locked
+
+  core:
+    name: Rust core for iOS
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.2
+
+      # Zig 0.15.2 cannot link against the libSystem stubs of later SDKs.
+      - name: Select Xcode 26.0
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Install Rust and pkg-config
+        run: |
+          rustup toolchain install
+          brew install pkgconf
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Build
+        run: scripts/build-core.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bellterm-ios-core
+          path: app/Generated
+          if-no-files-found: error
+          retention-days: 14
+
+  app:
+    name: Swift tests
+    needs: core
+    # iPhone Duo needs the iOS 27.1 SDK.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bellterm-ios-core
+          path: app/Generated
+
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          brew install xcodegen
+
+      - name: Test
+        run: |
+          scripts/fetch-fonts.sh
+          cd app
+          xcodegen
+          destination=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          phones = [d for r in json.load(sys.stdin)["devices"].values() for d in r if d["name"].startswith("iPhone")]
+          duo = [d for d in phones if "Duo" in d["name"]]
+          print((duo or phones)[-1]["udid"])')
+          xcodebuild test -project Bellterm.xcodeproj -scheme Bellterm \
+            -destination "id=$destination" CODE_SIGNING_ALLOWED=NO
