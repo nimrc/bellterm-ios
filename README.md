@@ -14,6 +14,9 @@ Bellterm runs on iOS 26 or newer, on iPhone and iPad, and is built for iPhone
 Duo. It shares its Rust core with
 [Bellterm for Android](https://github.com/nimrc/bellterm).
 
+**Install:** join the beta on
+[TestFlight](https://testflight.apple.com/join/aYFsFsRf).
+
 ## What it does
 
 | Herdr concept | In Bellterm |
