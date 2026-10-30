@@ -120,6 +120,7 @@ struct SessionScreen: View {
                     }
                     StateCard(
                         state: connection.state,
+                        retrying: connection.retrying,
                         rejectedPassword: rejectedHop(connection.state)?.auth == .password,
                         onRetry: retry,
                         onSignIn: { if let hop = rejectedHop(connection.state) { askPasswords = [hop] } },
