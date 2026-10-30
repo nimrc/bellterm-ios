@@ -3,6 +3,7 @@ import SwiftUI
 /// Why the session is not attached, and what can be done about it.
 struct StateCard: View {
     let state: Connection.State
+    let retrying: Bool
     let rejectedPassword: Bool
     let onRetry: () -> Void
     let onSignIn: () -> Void
@@ -43,7 +44,7 @@ struct StateCard: View {
         case .connecting, .connected:
             return nil
         case .disconnected(let reason):
-            return (String(localized: "Disconnected"), reason)
+            return (retrying ? String(localized: "Reconnecting…") : String(localized: "Disconnected"), reason)
         case .authRejected(_, let host):
             return (
                 String(localized: "Sign-in rejected"),

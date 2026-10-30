@@ -1231,6 +1231,16 @@
         }
       }
     },
+    "Reconnecting…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在重新连接…"
+          }
+        }
+      }
+    },
     "Remember password" : {
       "localizations" : {
         "zh-Hans" : {

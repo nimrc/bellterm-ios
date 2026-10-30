@@ -43,6 +43,12 @@ final class Connection {
 
     let node: Node
     private(set) var state: State = .connecting
+    /// Whether the daemon ever answered; a drop before then is a failed attempt.
+    private(set) var attached = false
+    /// The app will reattach on its own after this drop.
+    var retrying = false
+    /// Called when the link drops for a reason reattaching may fix.
+    @ObservationIgnored var onDrop: (() -> Void)?
     private(set) var view: ShellView?
     private(set) var frame: RenderFrame?
     let events: AsyncStream<Event>
@@ -58,6 +64,10 @@ final class Connection {
     }
 
     var isOpen: Bool { session != nil && state.isOpen }
+
+    var isDropped: Bool {
+        if case .disconnected = state { true } else { false }
+    }
 
     /// `configJson` is the route document; it holds secrets and is not kept.
     func start(configJson: String) {
@@ -157,6 +167,7 @@ final class Connection {
         case .event(let type, let e):
             switch type {
             case "connected":
+                attached = true
                 state = .connected(serverVersion: e.string("server_version"))
             case "notification":
                 emit.yield(.notification(
@@ -187,11 +198,12 @@ final class Connection {
                 finish(session)
                 return true
             case "disconnected", "closed":
+                finish(session)
                 if case .incompatible = state {} else {
                     let reason = e.string("reason")
                     state = .disconnected(reason: reason.isEmpty ? "Disconnected" : reason)
+                    onDrop?()
                 }
-                finish(session)
                 return true
             default:
                 break
@@ -235,6 +247,9 @@ final class Connection {
     }
 
     func setTheme(json: String) { session?.setTheme(themeJson: json) }
+
+    /// Has the host prove the link alive; a dead one ends as a drop within seconds.
+    func checkLiveness() { session?.checkLiveness() }
 
     func selectionText(start: (column: Int32, row: Int32), end: (column: Int32, row: Int32)) -> String {
         session?.selectionText(startColumn: start.column, startRow: start.row, endColumn: end.column, endRow: end.row) ?? ""

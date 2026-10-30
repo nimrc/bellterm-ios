@@ -230,6 +230,11 @@ impl Session {
         )
     }
 
+    /// Pings the host now; a link that stays silent ends as `disconnected`.
+    pub fn check_liveness(&self) {
+        self.core.check_liveness();
+    }
+
     /// The worker stops on its own thread; nothing is joined here, so the
     /// main thread never waits on the network.
     pub fn disconnect(&self) {
