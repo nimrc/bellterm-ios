@@ -36,6 +36,22 @@
           }
         }
       }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bellterm connects to Herdr daemons and SSH servers on your local network."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bellterm 会连接本地网络上的 Herdr 守护进程和 SSH 服务器。"
+          }
+        }
+      }
     }
   },
   "version" : "1.3"

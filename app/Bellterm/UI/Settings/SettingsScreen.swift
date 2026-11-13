@@ -5,6 +5,12 @@ struct SettingsScreen: View {
     @Bindable var settings: Settings
     let fonts: FontManager
 
+    private static let privacyPolicyURL = URL(string: "https://nimrc.github.io/privacy-policy/")!
+    private static let supportURL = URL(string: "https://github.com/nimrc/bellterm-ios/issues")!
+    private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Bellterm"
+    private static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+
     var body: some View {
         Form {
             Section("Appearance") {
@@ -36,6 +42,14 @@ struct SettingsScreen: View {
                 Link("Herdr", destination: URL(string: "https://herdr.dev/")!)
             } footer: {
                 Text("Bellterm works with Herdr but is not affiliated with, endorsed by, or supported by Herdr or herdr.dev.")
+            }
+            Section("About") {
+                LabeledContent(Self.appName, value: "\(Self.version) (\(Self.build))")
+                Link("Privacy policy", destination: Self.privacyPolicyURL)
+                Link("Support", destination: Self.supportURL)
+            }
+            Section {
+                MadeWithAirBuild()
             }
         }
         .navigationTitle("Settings")
