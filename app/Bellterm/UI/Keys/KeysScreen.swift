@@ -8,7 +8,7 @@ struct KeysScreen: View {
     @State private var failure: String?
 
     enum Adding: String, Identifiable {
-        case generate, importKey
+        case generate, generateRSA, importKey
         var id: String { rawValue }
     }
 
@@ -33,6 +33,7 @@ struct KeysScreen: View {
         .toolbar {
             Menu("Add key", systemImage: "plus") {
                 Button("Generate Ed25519 key", systemImage: "wand.and.stars") { adding = .generate }
+                Button("Generate RSA key", systemImage: "key.horizontal") { adding = .generateRSA }
                 Button("Import private key", systemImage: "square.and.arrow.down") { adding = .importKey }
             }
         }
@@ -52,60 +53,172 @@ private struct AddKeySheet: View {
     @State private var name = ""
     @State private var text = ""
     @State private var passphrase = ""
+    @State private var bits = 3072
     @State private var picking = false
+    @State private var working = false
     @State private var failure: String?
+    @State private var created: Identity?
 
     var body: some View {
         NavigationStack {
-            Form {
-                TextField("Name", text: $name)
-                if kind == .importKey {
-                    Section {
-                        TextEditor(text: $text)
-                            .font(.caption.monospaced()).frame(minHeight: 160)
-                            .autocorrectionDisabled().textInputAutocapitalization(.never)
-                        Button("Choose file…", systemImage: "folder") { picking = true }
-                    } header: {
-                        Text("OpenSSH private key")
-                    } footer: {
-                        Text("RSA, ECDSA, or Ed25519. The passphrase is used once to decrypt; the key is kept in this device's keychain.")
-                    }
-                    SecureField("Passphrase (if any)", text: $passphrase)
-                }
-                if let failure { Text(failure).foregroundStyle(.red) }
-            }
-            .navigationTitle(kind == .generate ? "Generate key" : "Import key")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(kind == .generate ? "Generate" : "Import", action: add)
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || (kind == .importKey && text.isEmpty))
-                }
-            }
-            .fileImporter(isPresented: $picking, allowedContentTypes: [.data, .plainText]) { result in
-                guard case .success(let url) = result else { return }
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                if let contents = try? String(contentsOf: url, encoding: .utf8) {
-                    text = contents
-                    if name.isEmpty { name = url.deletingPathExtension().lastPathComponent }
-                }
+            if let created {
+                CreatedKeyView(identity: created) { dismiss() }
+            } else {
+                form
             }
         }
     }
 
-    private func add() {
-        do {
-            let name = name.trimmingCharacters(in: .whitespaces)
-            switch kind {
-            case .generate: _ = try app.keychain.generate(name: name)
-            case .importKey: _ = try app.keychain.importKey(name: name, text: text, passphrase: passphrase.isEmpty ? nil : passphrase)
+    private var form: some View {
+        Form {
+            TextField("Name", text: $name)
+            if kind == .generateRSA {
+                Section {
+                    Picker("Key size", selection: $bits) {
+                        Text("2048 bits").tag(2048)
+                        Text("3072 bits").tag(3072)
+                        Text("4096 bits").tag(4096)
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("RSA key size")
+                } footer: {
+                    Text("3072 bits is the default. The keypair is generated on this device.")
+                }
             }
-            dismiss()
-        } catch {
-            failure = error.localizedDescription
+            if kind == .importKey {
+                Section {
+                    TextEditor(text: $text)
+                        .font(.caption.monospaced()).frame(minHeight: 160)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    Button("Choose file…", systemImage: "folder") { picking = true }
+                } header: {
+                    Text("OpenSSH private key")
+                } footer: {
+                    Text("RSA, ECDSA, or Ed25519. The passphrase is used once to decrypt; the key is kept in this device's keychain.")
+                }
+                SecureField("Passphrase (if any)", text: $passphrase)
+            }
+            if working {
+                ProgressView("Generating RSA key…")
+            }
+            if let failure { Text(failure).foregroundStyle(.red) }
         }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() }.disabled(working) }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(confirm, action: add)
+                    .disabled(working || name.trimmingCharacters(in: .whitespaces).isEmpty || (kind == .importKey && text.isEmpty))
+            }
+        }
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.data, .plainText]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            if let contents = try? String(contentsOf: url, encoding: .utf8) {
+                text = contents
+                if name.isEmpty { name = url.deletingPathExtension().lastPathComponent }
+            }
+        }
+    }
+
+    private var title: String {
+        switch kind {
+        case .generate: "Generate key"
+        case .generateRSA: "Generate RSA key"
+        case .importKey: "Import key"
+        }
+    }
+
+    private var confirm: String {
+        switch kind {
+        case .generate, .generateRSA: "Generate"
+        case .importKey: "Import"
+        }
+    }
+
+    private func add() {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        switch kind {
+        case .generate:
+            do {
+                _ = try app.keychain.generate(name: name)
+                dismiss()
+            } catch {
+                failure = error.localizedDescription
+            }
+        case .generateRSA:
+            working = true
+            failure = nil
+            Task { @MainActor in
+                do {
+                    created = try await app.keychain.generateRSA(name: name, bits: bits)
+                } catch {
+                    failure = error.localizedDescription
+                }
+                working = false
+            }
+        case .importKey:
+            do {
+                _ = try app.keychain.importKey(name: name, text: text, passphrase: passphrase.isEmpty ? nil : passphrase)
+                dismiss()
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// Shown right after an RSA key is made: its authorized_keys line is ready
+/// to copy or export, while the private half stays in the Keychain.
+private struct CreatedKeyView: View {
+    let identity: Identity
+    let done: () -> Void
+
+    var body: some View {
+        Form {
+            Section {
+                Label("Key created", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                Text(identity.name)
+            }
+            PublicKeyActions(identity: identity)
+        }
+        .navigationTitle("RSA key")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) }
+        }
+    }
+}
+
+private struct PublicKeyActions: View {
+    let identity: Identity
+
+    var body: some View {
+        Section {
+            Text(identity.publicKey).font(.caption.monospaced()).textSelection(.enabled)
+            Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = identity.publicKey }
+            ShareLink(item: exportURL) {
+                Label("Export .pub file", systemImage: "square.and.arrow.up")
+            }
+        } header: {
+            Text("Public key")
+        } footer: {
+            Text("Add this line to ~/.ssh/authorized_keys on each host.")
+        }
+    }
+
+    /// A file URL for the share sheet; the private key is not part of it.
+    private var exportURL: URL {
+        let base = identity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = base.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>")).joined(separator: "-")
+        let stem = cleaned.isEmpty ? "key" : cleaned
+        let filename = stem.lowercased().hasSuffix(".pub") ? stem : "\(stem).pub"
+        let url = FileManager.default.temporaryDirectory.appending(path: filename)
+        try? Data((identity.publicKey + "\n").utf8).write(to: url, options: .atomic)
+        return url
     }
 }
 
@@ -132,15 +245,7 @@ private struct IdentityScreen: View {
             if !identity.isDevice {
                 TextField("Name", text: $name).onSubmit { app.keychain.rename(id: identity.id, to: name) }
             }
-            Section {
-                Text(identity.publicKey).font(.caption.monospaced()).textSelection(.enabled)
-                ShareLink(item: identity.publicKey) { Label("Share public key", systemImage: "square.and.arrow.up") }
-                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = identity.publicKey }
-            } header: {
-                Text("Public key")
-            } footer: {
-                Text("Add this line to ~/.ssh/authorized_keys on each host.")
-            }
+            PublicKeyActions(identity: identity)
             Section {
                 TextEditor(text: $certificate)
                     .font(.caption.monospaced()).frame(minHeight: 100)
@@ -176,7 +281,7 @@ private struct IdentityScreen: View {
                 dismiss()
             }
         } message: {
-            Text("Nodes that sign in with it will use this device's key instead.")
+            Text("This key cannot be recovered. Nodes that sign in with it will use this device's key instead.")
         }
     }
 
