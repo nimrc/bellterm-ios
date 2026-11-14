@@ -10,7 +10,8 @@ struct NodesScreen: View {
     @State private var search = ""
     @State private var editing: NodeEditor.Target?
     @State private var deleting: Node?
-    @State private var askPasswords: (node: Node, hops: [Node])?
+    @State private var askPasswords: AppModel.CredentialRequest?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var route: Route?
 
     enum Route: Hashable {
@@ -94,12 +95,19 @@ struct NodesScreen: View {
             } message: { _ in
                 Text("Only the saved node is removed. Herdr and everything running on the host are untouched; nodes that jumped through it will connect directly.")
             }
-            .sheet(isPresented: Binding(get: { askPasswords != nil }, set: { if !$0 { askPasswords = nil } })) {
+            .onChange(of: scenePhase) { _, phase in if phase != .active { askPasswords = nil } }
+            .sheet(isPresented: Binding(get: { askPasswords != nil }, set: {
+                if !$0 {
+                    if let request = askPasswords { app.cancelCredentialRequests(for: request.nodeId) }
+                    askPasswords = nil
+                }
+            })) {
                 if let ask = askPasswords {
                     PasswordsSheet(hops: ask.hops) { secrets, remember in
                         askPasswords = nil
-                        app.connect(ask.node, passwords: secrets, dark: colorScheme == .dark, remember: remember)
-                        session = ask.node
+                        if app.submit(ask, passwords: secrets, dark: colorScheme == .dark, remember: remember) != nil {
+                            session = ask.route.last
+                        }
                     }
                 }
             }
@@ -152,7 +160,7 @@ struct NodesScreen: View {
         if app.connection(node.id)?.isOpen != true {
             let hops = app.passwordsToAsk(node)
             guard hops.isEmpty else {
-                askPasswords = (node, hops)
+                askPasswords = app.credentialRequest(node)
                 return
             }
             app.connect(node, dark: colorScheme == .dark)

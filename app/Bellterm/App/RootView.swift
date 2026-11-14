@@ -28,6 +28,7 @@ struct RootView: View {
                 switch phase {
                 case .background: app.enterBackground()
                 case .active: app.enterForeground(dark: (preferred ?? systemScheme) == .dark)
+                case .inactive: app.enterInactive()
                 default: break
                 }
             }

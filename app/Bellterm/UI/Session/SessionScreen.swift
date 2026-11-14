@@ -33,7 +33,8 @@ struct SessionScreen: View {
     @State private var column = NavigationSplitViewColumn.detail
     @State private var prompt: Prompt?
     @State private var promptText = ""
-    @State private var askPasswords: [Node]?
+    @State private var askPasswords: AppModel.CredentialRequest?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var banner: String?
     @State private var keys = ExtraKeySender()
     /// The terminal sits above a tabletop fold, so the keyboard no longer shrinks it.
@@ -51,10 +52,18 @@ struct SessionScreen: View {
         } message: { prompt in
             Text(promptMessage(prompt))
         }
-        .sheet(isPresented: Binding(get: { askPasswords != nil }, set: { if !$0 { askPasswords = nil } })) {
-            PasswordsSheet(hops: askPasswords ?? []) { secrets, remember in
+        .onChange(of: scenePhase) { _, phase in if phase != .active { askPasswords = nil } }
+        .sheet(isPresented: Binding(get: { askPasswords != nil }, set: {
+            if !$0 {
+                if let request = askPasswords { app.cancelCredentialRequests(for: request.nodeId) }
                 askPasswords = nil
-                app.reconnect(node, passwords: secrets, dark: dark, remember: remember)
+            }
+        })) {
+            if let request = askPasswords {
+                PasswordsSheet(hops: request.hops) { secrets, remember in
+                    askPasswords = nil
+                    _ = app.submit(request, passwords: secrets, dark: dark, remember: remember)
+                }
             }
         }
     }
@@ -123,7 +132,7 @@ struct SessionScreen: View {
                         retrying: connection.retrying,
                         rejectedPassword: rejectedHop(connection.state)?.auth == .password,
                         onRetry: retry,
-                        onSignIn: { if let hop = rejectedHop(connection.state) { askPasswords = [hop] } },
+                        onSignIn: retry,
                         onTrust: { host, fingerprint in
                             app.nodes.trust(host, fingerprint: fingerprint)
                             retry()
@@ -198,8 +207,15 @@ struct SessionScreen: View {
 
     /// Reconnect along the node's route, asking for unsaved passwords first.
     private func retry() {
-        let needed = app.passwordsToAsk(app.nodes.get(node.id) ?? node)
-        if needed.isEmpty { app.reconnect(node, dark: dark) } else { askPasswords = needed }
+        let rejected: Int?
+        if case .authRejected(let hop, _) = connection?.state { rejected = hop } else { rejected = nil }
+        if let request = app.credentialRequest(node, rejectedHop: rejected), !request.hops.isEmpty {
+            askPasswords = request
+        } else {
+            // A deleted jump or missing route still needs a real attempt so
+            // its route error reaches the user instead of doing nothing.
+            app.reconnect(node, dark: dark)
+        }
     }
 
     /// The node behind a rejected sign-in, so its password can be asked again.
