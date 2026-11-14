@@ -53,7 +53,12 @@ struct SessionScreen: View {
             Text(promptMessage(prompt))
         }
         .onChange(of: scenePhase) { _, phase in if phase != .active { askPasswords = nil } }
-        .sheet(isPresented: Binding(get: { askPasswords != nil }, set: { if !$0 { askPasswords = nil; app.cancelCredentialRequests() } })) {
+        .sheet(isPresented: Binding(get: { askPasswords != nil }, set: {
+            if !$0 {
+                if let request = askPasswords { app.cancelCredentialRequests(for: request.nodeId) }
+                askPasswords = nil
+            }
+        })) {
             if let request = askPasswords {
                 PasswordsSheet(hops: request.hops) { secrets, remember in
                     askPasswords = nil

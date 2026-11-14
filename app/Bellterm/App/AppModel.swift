@@ -28,6 +28,9 @@ final class AppModel {
     @ObservationIgnored private var dark = false
     private let monitor = NWPathMonitor()
     @ObservationIgnored private var lifecycle = UUID()
+    /// Per-node prompt epochs, so disconnecting one node cannot invalidate
+    /// another node's in-flight connect request.
+    @ObservationIgnored private var requestEpochs: [String: UUID] = [:]
     @ObservationIgnored private var pathTask: Task<Void, Never>?
     @ObservationIgnored private var pathGeneration = UUID()
     private static let log = Logger(subsystem: "app.bellterm", category: "reconnect")
@@ -46,15 +49,23 @@ final class AppModel {
     @ObservationIgnored private let pathSleep: (Duration) async throws -> Void
     @ObservationIgnored private let networkSettled: () -> Void
     @ObservationIgnored private let retrySleep: (Duration) async throws -> Void
+    @ObservationIgnored private let startSession: (Connection, String) -> Void
+    /// Test seam: adopts a fake session instead of reading keys and building
+    /// a route document. Production leaves this nil.
+    @ObservationIgnored private let prepareSession: ((Connection, [Node], [String: String], Bool) -> Void)?
 
     init(nodes: NodeStore = NodeStore(), monitorNetwork: Bool = true,
          networkSettled: @escaping () -> Void = {},
          pathSleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-         retrySleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         retrySleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         prepareSession: ((Connection, [Node], [String: String], Bool) -> Void)? = nil,
+         startSession: @escaping (Connection, String) -> Void = { $0.start(configJson: $1) }) {
         self.pathSleep = pathSleep
         self.networkSettled = networkSettled
         self.nodes = nodes
         self.retrySleep = retrySleep
+        self.startSession = startSession
+        self.prepareSession = prepareSession
         monitor.pathUpdateHandler = { [weak self] path in
             let signature = NetworkSignature(path)
             MainActor.assumeIsolated { self?.pathChanged(signature) }
@@ -72,6 +83,7 @@ final class AppModel {
     @discardableResult
     func connect(_ node: Node, passwords: [String: String] = [:], dark: Bool, remember: Bool = false) -> Connection {
         if let live = connections[node.id], live.isOpen { return live }
+        cancelCredentialRequests(for: node.id)
         suspended.removeAll { $0.id == node.id }
         retries.removeValue(forKey: node.id)?.task?.cancel()
         connections[node.id]?.close()
@@ -102,8 +114,14 @@ final class AppModel {
             Self.log.info("connect waiting_credentials hops=\(route.count)")
             return connection
         }
+        if let prepareSession {
+            prepareSession(connection, route, passwords, dark)
+            return connection
+        }
         do {
-            _ = try keychain.deviceIdentity(name: String(localized: "This device"))
+            if route.contains(where: { $0.auth == .key }) {
+                _ = try keychain.deviceIdentity(name: String(localized: "This device"))
+            }
             // A password typed but not remembered also clears any saved one,
             // which is how a rejected saved password is replaced or dropped.
             for (id, password) in passwords {
@@ -114,7 +132,7 @@ final class AppModel {
                 route: route, nodes: nodes, keychain: keychain, passwords: passwords,
                 grid: settings.lastGrid, scheme: scheme
             )
-            connection.start(configJson: document)
+            startSession(connection, document)
         } catch {
             connection.fail(String(localized: "A key on this route could not be read. Check Keys & certificates."))
         }
@@ -133,18 +151,29 @@ final class AppModel {
         let route: [Node]
         let hops: [Node]
         let lifecycle: UUID
+        let nodeId: String
+        let epoch: UUID
         let owner: Connection?
         let savedTarget: Bool
+    }
+
+    private func requestEpoch(_ nodeId: String) -> UUID {
+        if let epoch = requestEpochs[nodeId] { return epoch }
+        let epoch = UUID()
+        requestEpochs[nodeId] = epoch
+        return epoch
     }
 
     func credentialRequest(_ node: Node, rejectedHop: Int? = nil) -> CredentialRequest? {
         guard active, interactive, case .success(let route) = nodes.route(nodes.get(node.id) ?? node), let target = route.last else { return nil }
         return CredentialRequest(route: route, hops: passwordsToAsk(target, rejectedHop: rejectedHop),
-                                 lifecycle: lifecycle, owner: connections[node.id], savedTarget: nodes.get(node.id) != nil)
+                                 lifecycle: lifecycle, nodeId: target.id, epoch: requestEpoch(target.id),
+                                 owner: connections[target.id], savedTarget: nodes.get(target.id) != nil)
     }
 
     func submit(_ request: CredentialRequest, passwords: [String: String], dark: Bool, remember: Bool) -> Connection? {
-        guard active, interactive, lifecycle == request.lifecycle, let target = request.route.last,
+        guard active, interactive, lifecycle == request.lifecycle,
+              requestEpochs[request.nodeId] == request.epoch, let target = request.route.last,
               !request.savedTarget || nodes.get(target.id) != nil,
               connections[target.id] === request.owner,
               case .success(let current) = nodes.route(nodes.get(target.id) ?? target),
@@ -156,7 +185,16 @@ final class AppModel {
     /// Inactive invalidates visible credentials without closing attachments.
     func enterInactive() { interactive = false; cancelCredentialRequests() }
 
-    func cancelCredentialRequests() { lifecycle = UUID() }
+    /// With a node, invalidates only that node's prompt; without one, every
+    /// prompt (app lifecycle changes invalidate all of them).
+    func cancelCredentialRequests(for nodeId: String? = nil) {
+        if let nodeId {
+            requestEpochs[nodeId] = nil
+        } else {
+            lifecycle = UUID()
+            requestEpochs.removeAll()
+        }
+    }
 
     /// Retry after the user trusted a host key or changed credentials.
     @discardableResult
@@ -166,7 +204,7 @@ final class AppModel {
     }
 
     func disconnect(_ nodeId: String) {
-        cancelCredentialRequests()
+        cancelCredentialRequests(for: nodeId)
         suspended.removeAll { $0.id == nodeId }
         retries.removeValue(forKey: nodeId)?.task?.cancel()
         connections[nodeId]?.close()
@@ -180,7 +218,7 @@ final class AppModel {
     func enterBackground() {
         guard active else { return }
         active = false
-        lifecycle = UUID()
+        cancelCredentialRequests()
         pathTask?.cancel()
         pathGeneration = UUID()
         Self.log.info("lifecycle background")
@@ -259,12 +297,22 @@ final class AppModel {
     }
 
     private func reattach(_ id: String) {
-        guard active, var retry = retries[id], let old = connections[id], old.isDropped,
-              passwordsToAsk(nodes.get(id) ?? old.node).isEmpty else { return }
+        guard active, var retry = retries[id], let old = connections[id], old.isDropped else { return }
+        let missing = passwordsToAsk(nodes.get(id) ?? old.node)
+        guard missing.isEmpty else {
+            // A jump password was deleted or the node switched to password auth.
+            // Stop the spinner and let the user supply it; an empty retry cannot.
+            retries.removeValue(forKey: id)?.task?.cancel()
+            old.retrying = false
+            old.fail(String(localized: "Passwords are required. Choose Reconnect to enter them."))
+            Self.log.info("reattach waiting_credentials id=\(old.diagnosticID) hops=\(missing.count)")
+            return
+        }
         guard case .success(let route) = nodes.route(nodes.get(id) ?? old.node),
               Routes.sameRoute(route, old.routeSnapshot) else {
             retries.removeValue(forKey: id)?.task?.cancel()
             old.retrying = false
+            old.fail(String(localized: "The route changed. Choose Reconnect to connect again."))
             return
         }
         retry.task?.cancel()
@@ -290,8 +338,12 @@ final class AppModel {
             try? await self.pathSleep(.milliseconds(500))
             guard !Task.isCancelled, self.active, self.pathGeneration == generation else { return }
             self.networkSettled()
-            Self.log.info("network changed ipv4=\(signature.ipv4) ipv6=\(signature.ipv6) expensive=\(signature.expensive) constrained=\(signature.constrained)")
-            for connection in self.connections.values {
+            Self.log.info("network changed ipv4=\(signature.ipv4) ipv6=\(signature.ipv6) tunnel=\(signature.tunnel)")
+            // This is a fresh route, not a continuation of the old link's backoff.
+            for id in Array(self.retries.keys) { self.retries[id]?.attempt = 0 }
+            // Only an established attachment has a live link to prove. A
+            // handshake in progress is bounded by Connection's timeout instead.
+            for connection in self.connections.values where connection.attached {
                 if case .connected = connection.state { connection.checkLiveness() }
             }
             for id in Array(self.retries.keys) where self.connections[id]?.isDropped == true {
@@ -299,6 +351,10 @@ final class AppModel {
             }
         }
     }
+
+    /// Test/diagnostic view of the backoff state for a node.
+    func pendingRetryAttempts(_ nodeId: String) -> Int? { retries[nodeId]?.attempt }
+    func hasPendingRetry(_ nodeId: String) -> Bool { retries[nodeId] != nil }
 
     private static func message(_ problem: RouteProblem) -> String {
         switch problem {

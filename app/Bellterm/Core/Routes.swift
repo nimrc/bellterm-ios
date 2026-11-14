@@ -25,11 +25,22 @@ enum Routes {
         }
     }
 
+    /// Compare only what changes where the route connects. Renaming or
+    /// recolouring a node does not invalidate an in-flight reattach.
     static func sameRoute(_ lhs: [Node], _ rhs: [Node]) -> Bool {
-        func normalize(_ route: [Node]) -> [Node] {
-            route.map { node in var node = node; node.lastUsed = .distantPast; return node }
+        struct Hop: Equatable {
+            let address: String
+            let port: Int
+            let user: String
+            let session: String
+            let auth: AuthMethod
+            let jumpId: String?
         }
-        return normalize(lhs) == normalize(rhs)
+        func hops(_ route: [Node]) -> [Hop] {
+            route.map { Hop(address: $0.address, port: $0.port, user: $0.user,
+                            session: $0.session, auth: $0.auth, jumpId: $0.jumpId) }
+        }
+        return hops(lhs) == hops(rhs)
     }
 
     static func document(

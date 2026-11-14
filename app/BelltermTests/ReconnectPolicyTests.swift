@@ -77,14 +77,50 @@ struct ReconnectPolicyTests {
         #expect(model.connection(node.id) == nil)
     }
 
-    @Test func pathSignaturesRepresentCapabilitiesAndActualInterfaceSet() {
-        let wifi = NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true)
-        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true))
-        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["cellular"], ipv4: true))
-        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, ipv6: true))
-        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, expensive: true))
-        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, constrained: true))
+    @Test func pathSignaturesTrackReachabilityNotPolicyOrTunnel() {
+        let wifi = NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 1)
+        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 1))
+        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["cellular"], ipv4: true, endpoint: 1))
+        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, ipv6: true, endpoint: 1))
+        // Low-data mode and metering do not change reachability.
+        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, expensive: true, endpoint: 1))
+        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, constrained: true, endpoint: 1))
+        // A tunnel's interface/endpoint noise is ignored.
+        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi", "other"], ipv4: true, tunnel: true))
+        // A different local route (Wi-Fi AP switch) is a real change.
+        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 2))
         #expect(wifi != NetworkSignature(satisfied: false, status: "unsatisfied"))
+    }
+
+    @Test func routeComparisonIgnoresPresentationOnlyChanges() {
+        var base = Node(name: "a", address: "a.invalid", user: "me")
+        base.session = "work"
+        var renamed = base
+        renamed.name = "renamed"
+        renamed.color = 4
+        renamed.group = "ops"
+        renamed.keepAlive = 3
+        renamed.lastUsed = .now
+        #expect(Routes.sameRoute([base], [renamed]))
+
+        var changed = base
+        changed.address = "b.invalid"
+        #expect(!Routes.sameRoute([base], [changed]))
+        changed = base
+        changed.port = 2222
+        #expect(!Routes.sameRoute([base], [changed]))
+        changed = base
+        changed.user = "someone"
+        #expect(!Routes.sameRoute([base], [changed]))
+        changed = base
+        changed.session = "other"
+        #expect(!Routes.sameRoute([base], [changed]))
+        changed = base
+        changed.auth = .password
+        #expect(!Routes.sameRoute([base], [changed]))
+        changed = base
+        changed.jumpId = "jump"
+        #expect(!Routes.sameRoute([base], [changed]))
     }
 }
 

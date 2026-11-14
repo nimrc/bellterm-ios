@@ -96,7 +96,12 @@ struct NodesScreen: View {
                 Text("Only the saved node is removed. Herdr and everything running on the host are untouched; nodes that jumped through it will connect directly.")
             }
             .onChange(of: scenePhase) { _, phase in if phase != .active { askPasswords = nil } }
-            .sheet(isPresented: Binding(get: { askPasswords != nil }, set: { if !$0 { askPasswords = nil; app.cancelCredentialRequests() } })) {
+            .sheet(isPresented: Binding(get: { askPasswords != nil }, set: {
+                if !$0 {
+                    if let request = askPasswords { app.cancelCredentialRequests(for: request.nodeId) }
+                    askPasswords = nil
+                }
+            })) {
                 if let ask = askPasswords {
                     PasswordsSheet(hops: ask.hops) { secrets, remember in
                         askPasswords = nil

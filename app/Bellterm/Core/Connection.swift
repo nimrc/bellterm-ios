@@ -78,7 +78,11 @@ final class Connection {
     let events: AsyncStream<Event>
     private let emit: AsyncStream<Event>.Continuation
 
-    private var session: Session?
+    private var session: SessionProtocol?
+    /// Bounds a handshake that never reaches the daemon, so a path probe can
+    /// never leave a session spinning on "connecting" forever.
+    @ObservationIgnored private var timeoutTask: Task<Void, Never>?
+    private static let connectTimeout: Duration = .seconds(30)
     /// The grid the view wants; re-sent once the daemon's boot is known.
     private var grid: Grid?
 
@@ -95,8 +99,9 @@ final class Connection {
 
     /// `configJson` is the route document; it holds secrets and is not kept.
     func start(configJson: String) {
+        timeoutTask?.cancel()
         state = .connecting
-        let session: Session
+        let session: SessionProtocol
         do {
             session = try Session.connect(configJson: configJson)
         } catch {
@@ -105,6 +110,7 @@ final class Connection {
             return
         }
         self.session = session
+        startTimeout()
         // next_event blocks for up to its timeout, so it gets its own thread
         // rather than a slot in the cooperative pool.
         let owner = Owner(self)
@@ -114,7 +120,22 @@ final class Connection {
     }
 
     func fail(_ reason: String) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
         state = .failed(reason: reason)
+    }
+
+    private func startTimeout() {
+        timeoutTask?.cancel()
+        timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.connectTimeout)
+            guard !Task.isCancelled, let self, self.state == .connecting,
+                  let session = self.session else { return }
+            self.timeoutTask = nil
+            self.finish(session)
+            self.state = .disconnected(reason: String(localized: "The connection timed out."))
+            self.onDrop?()
+        }
     }
 
     /// Lets the reader thread outlive a dropped connection without keeping it.
@@ -123,7 +144,7 @@ final class Connection {
         init(_ connection: Connection) { self.connection = connection }
     }
 
-    nonisolated private static func pump(_ session: Session, into owner: Owner) {
+    nonisolated private static func pump(_ session: SessionProtocol, into owner: Owner) {
         while true {
             guard let json = session.nextEvent(timeoutMs: 500) else {
                 if owner.connection == nil { session.disconnect(); return }
@@ -177,7 +198,7 @@ final class Connection {
     }
 
     /// Applies one event; true when the session is over.
-    private func apply(_ payload: Pumped, from session: Session) -> Bool {
+    private func apply(_ payload: Pumped, from session: SessionProtocol) -> Bool {
         guard self.session === session else { return true }
         switch payload {
         case .frame(let frame):
@@ -193,6 +214,8 @@ final class Connection {
             switch type {
             case "connected":
                 attached = true
+                timeoutTask?.cancel()
+                timeoutTask = nil
                 state = .connected(serverVersion: e.string("server_version"))
             case "notification":
                 emit.yield(.notification(
@@ -237,16 +260,47 @@ final class Connection {
         return false
     }
 
-    private func finish(_ session: Session) {
+    private func finish(_ session: SessionProtocol) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
         session.disconnect()
         if self.session === session { self.session = nil }
     }
 
     func close() {
+        timeoutTask?.cancel()
+        timeoutTask = nil
         session?.disconnect()
         session = nil
         if state.isOpen { state = .disconnected(reason: "Disconnected") }
     }
+
+#if DEBUG
+    /// Test seams: adopt a fake session without starting the reader thread.
+    func attachForTesting(_ session: SessionProtocol) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        self.session = session
+        attached = true
+        state = .connected(serverVersion: "test")
+    }
+
+    func holdForTesting(_ session: SessionProtocol) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        self.session = session
+        attached = false
+        state = .connecting
+    }
+
+    func dropForTesting(reason: String = "Disconnected") {
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        session = nil
+        state = .disconnected(reason: reason)
+        onDrop?()
+    }
+#endif
 
     // Input; dropped when not connected.
 
