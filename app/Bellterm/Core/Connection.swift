@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 
 /// One attached daemon. A reader thread drains the core's event queue and
 /// publishes the latest frame and shell view; the UI renders whatever is
@@ -41,8 +42,31 @@ final class Connection {
     static let touchScrollUp: Int32 = 1
     static let touchScrollDown: Int32 = 2
 
+    var routeSnapshot: [Node] = []
+    let diagnosticID = UUID().uuidString
+    private static let log = Logger(subsystem: "app.bellterm", category: "connection")
+    var diagnosticCategory: String {
+        switch state {
+        case .connecting: "connecting"
+        case .connected: "attached"
+        case .disconnected: "transport"
+        case .untrustedHostKey: "host_trust"
+        case .authRejected: "authentication"
+        case .failed: "route_or_credentials"
+        case .incompatible: "incompatible"
+        }
+    }
+    @ObservationIgnored var onStop: (() -> Void)?
     let node: Node
-    private(set) var state: State = .connecting
+    private(set) var state: State = .connecting {
+        didSet {
+            Self.log.info("state id=\(self.diagnosticID) category=\(self.diagnosticCategory)")
+            switch state {
+            case .failed, .authRejected, .untrustedHostKey, .incompatible: onStop?()
+            default: break
+            }
+        }
+    }
     /// Whether the daemon ever answered; a drop before then is a failed attempt.
     private(set) var attached = false
     /// The app will reattach on its own after this drop.
@@ -77,6 +101,7 @@ final class Connection {
             session = try Session.connect(configJson: configJson)
         } catch {
             state = .disconnected(reason: error.localizedDescription)
+            onDrop?()
             return
         }
         self.session = session

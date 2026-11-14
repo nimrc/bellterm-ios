@@ -78,7 +78,7 @@ struct PasswordsSheet: View {
     let onConnect: (_ passwords: [String: String], _ remember: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var secrets: [String: String] = [:]
-    @State private var remember = true
+    @State private var remember = false
     @FocusState private var focused: String?
 
     var body: some View {

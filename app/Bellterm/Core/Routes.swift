@@ -6,12 +6,30 @@ import Foundation
 /// the core; a password typed for this connection wins.
 @MainActor
 enum Routes {
+    enum CredentialError: Error { case missingPassword }
     /// Nodes in `route` that sign in with a password.
     static func passwordHops(_ route: [Node]) -> [Node] { route.filter { $0.auth == .password } }
 
     /// Password nodes in `route` with no saved password, which must be asked for.
     static func unsavedPasswordHops(_ route: [Node], saved: (Node) -> Bool) -> [Node] {
         passwordHops(route).filter { !saved($0) }
+    }
+
+    /// All missing hops, plus a rejected hop even if Keychain still has its old password.
+    static func requiredPasswordHops(_ route: [Node], rejectedHop: Int? = nil,
+                                     supplied: [String: String] = [:], saved: (Node) -> Bool) -> [Node] {
+        route.enumerated().compactMap { index, node in
+            guard node.auth == .password, supplied[node.id]?.isEmpty != false,
+                  index == rejectedHop || !saved(node) else { return nil }
+            return node
+        }
+    }
+
+    static func sameRoute(_ lhs: [Node], _ rhs: [Node]) -> Bool {
+        func normalize(_ route: [Node]) -> [Node] {
+            route.map { node in var node = node; node.lastUsed = .distantPast; return node }
+        }
+        return normalize(lhs) == normalize(rhs)
     }
 
     static func document(
@@ -23,6 +41,9 @@ enum Routes {
         scheme: TerminalScheme
     ) throws -> String {
         guard let target = route.last else { throw RouteProblem.tooLong }
+        guard requiredPasswordHops(route, supplied: passwords, saved: {
+            keychain.password(nodeId: $0.id)?.isEmpty == false
+        }).isEmpty else { throw CredentialError.missingPassword }
         let hops: [[String: Any]] = route.map { node in
             let auth: [String: Any] = switch node.auth {
             case .password:
