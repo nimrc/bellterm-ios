@@ -81,12 +81,18 @@ struct ReconnectPolicyTests {
         let wifi = NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 1)
         #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 1))
         #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["cellular"], ipv4: true, endpoint: 1))
-        #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, ipv6: true, endpoint: 1))
+        // IPv4/IPv6 support is logged, not a reachability change.
+        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, ipv6: true, endpoint: 1))
+        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: false, ipv6: true, endpoint: 1))
         // Low-data mode and metering do not change reachability.
         #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, expensive: true, endpoint: 1))
         #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, constrained: true, endpoint: 1))
-        // A tunnel's interface/endpoint noise is ignored.
-        #expect(wifi == NetworkSignature(satisfied: true, interfaces: ["wifi", "other"], ipv4: true, tunnel: true))
+        // A tunnel coming up or going down is a real change; while both sides
+        // are tunneled, the hidden endpoint is ignored.
+        let tunnel = NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, tunnel: true)
+        #expect(wifi != tunnel)
+        #expect(tunnel == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 2, tunnel: true))
+        #expect(tunnel == NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: false, ipv6: true, tunnel: true))
         // A different local route (Wi-Fi AP switch) is a real change.
         #expect(wifi != NetworkSignature(satisfied: true, interfaces: ["wifi"], ipv4: true, endpoint: 2))
         #expect(wifi != NetworkSignature(satisfied: false, status: "unsatisfied"))

@@ -57,6 +57,8 @@ final class Connection {
         }
     }
     @ObservationIgnored var onStop: (() -> Void)?
+    /// Called once the daemon answers, so an owner can clear a pending retry.
+    @ObservationIgnored var onConnected: (() -> Void)?
     let node: Node
     private(set) var state: State = .connecting {
         didSet {
@@ -82,12 +84,13 @@ final class Connection {
     /// Bounds a handshake that never reaches the daemon, so a path probe can
     /// never leave a session spinning on "connecting" forever.
     @ObservationIgnored private var timeoutTask: Task<Void, Never>?
-    private static let connectTimeout: Duration = .seconds(30)
+    private let connectTimeout: Duration
     /// The grid the view wants; re-sent once the daemon's boot is known.
     private var grid: Grid?
 
-    init(node: Node) {
+    init(node: Node, connectTimeout: Duration = .seconds(30)) {
         self.node = node
+        self.connectTimeout = connectTimeout
         (events, emit) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(32))
     }
 
@@ -127,8 +130,9 @@ final class Connection {
 
     private func startTimeout() {
         timeoutTask?.cancel()
+        let timeout = connectTimeout
         timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.connectTimeout)
+            try? await Task.sleep(for: timeout)
             guard !Task.isCancelled, let self, self.state == .connecting,
                   let session = self.session else { return }
             self.timeoutTask = nil
@@ -217,6 +221,7 @@ final class Connection {
                 timeoutTask?.cancel()
                 timeoutTask = nil
                 state = .connected(serverVersion: e.string("server_version"))
+                onConnected?()
             case "notification":
                 emit.yield(.notification(
                     title: e.string("title"), body: e.strings["body"],
@@ -283,6 +288,16 @@ final class Connection {
         self.session = session
         attached = true
         state = .connected(serverVersion: "test")
+        onConnected?()
+    }
+
+    /// Begins the real timeout only, without opening SSH.
+    func beginHandshakeForTesting(_ session: SessionProtocol) {
+        timeoutTask?.cancel()
+        self.session = session
+        attached = false
+        state = .connecting
+        startTimeout()
     }
 
     func holdForTesting(_ session: SessionProtocol) {

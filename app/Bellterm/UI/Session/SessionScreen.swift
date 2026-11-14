@@ -209,8 +209,13 @@ struct SessionScreen: View {
     private func retry() {
         let rejected: Int?
         if case .authRejected(let hop, _) = connection?.state { rejected = hop } else { rejected = nil }
-        guard let request = app.credentialRequest(node, rejectedHop: rejected) else { return }
-        if request.hops.isEmpty { app.reconnect(node, dark: dark) } else { askPasswords = request }
+        if let request = app.credentialRequest(node, rejectedHop: rejected), !request.hops.isEmpty {
+            askPasswords = request
+        } else {
+            // A deleted jump or missing route still needs a real attempt so
+            // its route error reaches the user instead of doing nothing.
+            app.reconnect(node, dark: dark)
+        }
     }
 
     /// The node behind a rejected sign-in, so its password can be asked again.

@@ -102,6 +102,7 @@ struct ReconnectLifecycleTests {
         #expect(second !== first)
         #expect(second.state == .connected(serverVersion: "test"))
         #expect(!second.retrying)
+        #expect(!model.hasPendingRetry(node.id))
         #expect(starts == 2)
     }
 
@@ -149,7 +150,8 @@ struct ReconnectLifecycleTests {
         #expect(second !== first)
         #expect(second.state == .connected(serverVersion: "test"))
         #expect(!second.retrying)
-        #expect(model.pendingRetryAttempts(node.id) == 0)
+        #expect(!model.hasPendingRetry(node.id))
+        #expect(model.pendingRetryAttempts(node.id) == nil)
         #expect(starts == 2)
 
         // Let the cancelled backoff task finish its overridden sleep.
@@ -209,6 +211,7 @@ struct ReconnectLifecycleTests {
         let second = try #require(model.connection(reconnecting.id))
         #expect(second !== first)
         #expect(second.state == .connected(serverVersion: "test"))
+        #expect(!model.hasPendingRetry(reconnecting.id))
 
         let connected = try #require(model.submit(request, passwords: [pending.id: "a-secret"],
                                                   dark: false, remember: false))
@@ -270,5 +273,82 @@ struct ReconnectLifecycleTests {
             return
         }
         #expect(reason.localizedCaseInsensitiveContains("route changed"))
+    }
+
+    @Test func missingJumpOnRetrySurfacesRouteError() async throws {
+        let nodes = store()
+        let jump = keyNode("jump")
+        var target = keyNode("target")
+        target.jumpId = jump.id
+        nodes.upsertAll([jump, target])
+        let clock = LifecycleClock()
+        let model = makeModel(nodes: nodes, starts: {}, retrySleep: { _ in await clock.sleep() })
+
+        let connection = model.connect(target, dark: false)
+        connection.dropForTesting()
+        #expect(model.hasPendingRetry(target.id))
+        await clock.waitUntilScheduled()
+
+        // A stale jump reference must fail with the real route error, not a
+        // generic "route changed" that gives the user nothing to fix.
+        target.jumpId = "missing-\(UUID().uuidString)"
+        nodes.upsert(target)
+        await clock.advance()
+        await settle()
+
+        let replacement = try #require(model.connection(target.id))
+        #expect(replacement !== connection)
+        guard case .failed(let reason) = replacement.state else {
+            Issue.record("missing jump must surface a route failure")
+            return
+        }
+        #expect(reason.localizedCaseInsensitiveContains("jump host"))
+        #expect(!replacement.retrying)
+        #expect(!model.hasPendingRetry(target.id))
+    }
+
+    @Test func deletedJumpOnRetryReconnectsInsteadOfRouteChanged() async throws {
+        let nodes = store()
+        let jump = keyNode("deleted-jump")
+        var target = keyNode("target")
+        target.jumpId = jump.id
+        nodes.upsertAll([jump, target])
+        let clock = LifecycleClock()
+        let model = makeModel(nodes: nodes, starts: {}, retrySleep: { _ in await clock.sleep() })
+
+        let connection = model.connect(target, dark: false)
+        connection.dropForTesting()
+        #expect(model.hasPendingRetry(target.id))
+        await clock.waitUntilScheduled()
+
+        nodes.delete(jump)
+        await clock.advance()
+        await settle()
+
+        let replacement = try #require(model.connection(target.id))
+        #expect(replacement !== connection)
+        #expect(replacement.state == .connected(serverVersion: "test"))
+        #expect(!replacement.retrying)
+        #expect(!model.hasPendingRetry(target.id))
+    }
+
+    @Test func handshakeTimeoutDropsStuckConnectingSession() async throws {
+        let node = keyNode("timeout")
+        let connection = Connection(node: node, connectTimeout: .milliseconds(20))
+        var drops = 0
+        connection.onDrop = { drops += 1 }
+        connection.beginHandshakeForTesting(FakeSession())
+        #expect(connection.state == .connecting)
+
+        // The production timeout is 30 seconds; this exercises the same path.
+        try await Task.sleep(for: .milliseconds(400))
+
+        guard case .disconnected(let reason) = connection.state else {
+            Issue.record("a handshake that never connects must time out")
+            return
+        }
+        #expect(reason.localizedCaseInsensitiveContains("timed out"))
+        #expect(drops == 1)
+        #expect(!connection.isOpen)
     }
 }

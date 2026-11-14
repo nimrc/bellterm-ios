@@ -60,14 +60,16 @@ struct NetworkSignature: Equatable, Sendable {
         return gateways.isEmpty ? nil : gateways.joined(separator: "|").hashValue
     }
 
-    /// Expensive/constrained (low-data mode) and a tunnel's endpoint are
-    /// deliberately not part of equality: neither changes reachability.
+    /// IP support is logged but not compared: an IPv6 flag can appear on the
+    /// same link and must not reset backoff. Expensive/constrained (low-data
+    /// mode) likewise do not change reachability. A tunnel coming up or going
+    /// down is always a real change; only compare the local route while both
+    /// sides are untunneled, because a tunnel hides the underlying endpoint.
     static func == (lhs: NetworkSignature, rhs: NetworkSignature) -> Bool {
         lhs.satisfied == rhs.satisfied
             && lhs.interfaces == rhs.interfaces
-            && lhs.ipv4 == rhs.ipv4
-            && lhs.ipv6 == rhs.ipv6
             && lhs.status == rhs.status
-            && (lhs.tunnel || rhs.tunnel || lhs.endpoint == rhs.endpoint)
+            && lhs.tunnel == rhs.tunnel
+            && (lhs.tunnel || lhs.endpoint == rhs.endpoint)
     }
 }

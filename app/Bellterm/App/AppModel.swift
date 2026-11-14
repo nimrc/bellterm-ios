@@ -98,6 +98,11 @@ final class AppModel {
             connection.retrying = false
             Self.log.info("connect stopped id=\(connection.diagnosticID) category=\(connection.diagnosticCategory)")
         }
+        connection.onConnected = { [weak self, weak connection] in
+            guard let self, let connection, self.connections[node.id] === connection else { return }
+            self.retries.removeValue(forKey: node.id)?.task?.cancel()
+            connection.retrying = false
+        }
         if case .success(let route) = nodes.route(node) { connection.routeSnapshot = route }
         connections[node.id] = connection
         nodes.touch(node)
@@ -308,8 +313,14 @@ final class AppModel {
             Self.log.info("reattach waiting_credentials id=\(old.diagnosticID) hops=\(missing.count)")
             return
         }
-        guard case .success(let route) = nodes.route(nodes.get(id) ?? old.node),
-              Routes.sameRoute(route, old.routeSnapshot) else {
+        let node = nodes.get(id) ?? old.node
+        // A deleted jump host must surface its real route error, not look like
+        // a user edit. Only a live route that changed while all old hops still
+        // exist is a route edit worth stopping for.
+        let snapshotIntact = old.routeSnapshot.allSatisfy { nodes.get($0.id) != nil }
+        if case .success(let route) = nodes.route(node),
+           snapshotIntact,
+           !Routes.sameRoute(route, old.routeSnapshot) {
             retries.removeValue(forKey: id)?.task?.cancel()
             old.retrying = false
             old.fail(String(localized: "The route changed. Choose Reconnect to connect again."))
@@ -317,13 +328,20 @@ final class AppModel {
         }
         retry.task?.cancel()
         retry.task = nil
-        let connection = reconnect(nodes.get(id) ?? old.node, dark: dark)
+        let connection = reconnect(node, dark: dark)
         // A synchronous start failure must participate in backoff, but a route
         // failure, host trust, rejected credentials or incompatibility must not.
-        if connection.state.isOpen || connection.isDropped {
+        if case .connected = connection.state {
+            retries.removeValue(forKey: id)?.task?.cancel()
+            connection.retrying = false
+        } else if connection.isDropped {
             retries[id] = retry
-            if connection.isDropped { dropped(connection) }
-        } else { connection.retrying = false }
+            dropped(connection)
+        } else if connection.state.isOpen {
+            retries[id] = retry
+        } else {
+            connection.retrying = false
+        }
     }
 
     func pathChanged(_ signature: NetworkSignature) {
