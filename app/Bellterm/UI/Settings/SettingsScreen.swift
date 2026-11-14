@@ -5,8 +5,20 @@ struct SettingsScreen: View {
     @Bindable var settings: Settings
     let fonts: FontManager
 
-    private static let privacyPolicyURL = URL(string: "https://nimrc.github.io/privacy-policy/")!
-    private static let supportURL = URL(string: "https://github.com/nimrc/bellterm-ios/issues")!
+    /// Follow the app's resolved UI language, so the Chinese build opens the
+    /// Simplified Chinese pages and every other language opens the English ones.
+    private static let usesSimplifiedChinese = Bundle.main.preferredLocalizations
+        .first?.hasPrefix("zh") ?? false
+    private static var privacyPolicyURL: URL {
+        URL(string: usesSimplifiedChinese
+            ? "https://bellterm.app/zh/privacy/"
+            : "https://bellterm.app/privacy/")!
+    }
+    private static var supportURL: URL {
+        URL(string: usesSimplifiedChinese
+            ? "https://bellterm.app/zh/support/"
+            : "https://bellterm.app/support/")!
+    }
     private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Bellterm"
     private static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
