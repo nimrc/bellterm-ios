@@ -11,7 +11,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "5"
     SWIFT_EMIT_LOC_STRINGS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     # The Rust core ships arm64 slices only.
@@ -42,6 +42,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown
         INFOPLIST_KEY_CFBundleDisplayName: Bellterm
+        # Bellterm reaches SSH hosts, including Herdr daemons, on the local network.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Bellterm connects to Herdr daemons and SSH servers on your local network.
   BelltermTests:
     type: bundle.unit-test
     platform: iOS

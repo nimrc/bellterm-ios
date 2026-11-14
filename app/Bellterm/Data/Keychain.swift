@@ -64,10 +64,14 @@ final class Keychain {
     private func save(_ identities: [Identity]) {
         self.identities = identities
         do {
-            try JSONEncoder().encode(identities).write(to: file, options: [.atomic, .completeFileProtection])
+            try persist(identities)
         } catch {
             assertionFailure("identities not saved: \(error)")
         }
+    }
+
+    private func persist(_ identities: [Identity]) throws {
+        try JSONEncoder().encode(identities).write(to: file, options: [.atomic, .completeFileProtection])
     }
 
     func get(_ id: String?) -> Identity? { identities.first { $0.id == (id ?? Self.device) } }
@@ -80,6 +84,15 @@ final class Keychain {
 
     func generate(name: String) throws -> Identity {
         try store(id: UUID().uuidString, name: name, privateKey: try generateKey(comment: Self.comment), info: nil)
+    }
+
+    /// Creates an RSA keypair with Security and keeps its OpenSSH private key
+    /// in the Keychain, like an imported key.
+    func generateRSA(name: String, bits: Int) async throws -> Identity {
+        let privateKey = try await Task.detached(priority: .userInitiated) {
+            try RSAKeyMaterial.generate(bits: bits, comment: name)
+        }.value
+        return try importKey(name: name, text: privateKey, passphrase: nil)
     }
 
     /// Import key text, decrypting it with `passphrase` when protected. Throws
@@ -100,7 +113,15 @@ final class Keychain {
             id: id, name: name, algorithm: details.algorithm,
             fingerprint: details.fingerprint, publicKey: details.public
         )
-        save(identities.filter { $0.id != id } + [identity])
+        let updated = identities.filter { $0.id != id } + [identity]
+        do {
+            try persist(updated)
+        } catch {
+            // Do not leave a key that the list does not know about.
+            Self.remove(service: Self.keyService, account: id)
+            throw error
+        }
+        identities = updated
         return identity
     }
 

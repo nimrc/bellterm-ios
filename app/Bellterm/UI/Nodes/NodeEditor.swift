@@ -26,6 +26,7 @@ struct NodeEditor: View {
     @State private var keepAlive: String
     @State private var password = ""
     @State private var forgetPassword = false
+    @State private var saveError: String?
 
     init(app: AppModel, target: Target) {
         self.app = app
@@ -59,6 +60,10 @@ struct NodeEditor: View {
 
     private var groups: [String] {
         Array(Set(app.nodes.nodes.map(\.group).filter { !$0.isEmpty })).sorted()
+    }
+
+    private var saveErrorShown: Binding<Bool> {
+        Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })
     }
 
     var body: some View {
@@ -162,6 +167,11 @@ struct NodeEditor: View {
                     Button("Save", role: .confirm, action: save).disabled(!valid)
                 }
             }
+            .alert("Couldn't save password", isPresented: saveErrorShown) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("The password could not be saved to the keychain, so the node was not saved.\n\n\(saveError ?? "")")
+            }
         }
     }
 
@@ -171,7 +181,14 @@ struct NodeEditor: View {
         node.address = node.address.trimmingCharacters(in: .whitespaces)
         node.user = node.user.trimmingCharacters(in: .whitespaces)
         if node.auth == .key || forgetPassword { app.keychain.forgetPassword(nodeId: node.id) }
-        if node.auth == .password, !password.isEmpty { try? app.keychain.savePassword(nodeId: node.id, password) }
+        if node.auth == .password, !password.isEmpty {
+            do {
+                try app.keychain.savePassword(nodeId: node.id, password)
+            } catch {
+                saveError = error.localizedDescription
+                return
+            }
+        }
         app.nodes.upsert(node)
         dismiss()
     }

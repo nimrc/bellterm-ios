@@ -5,6 +5,24 @@ struct SettingsScreen: View {
     @Bindable var settings: Settings
     let fonts: FontManager
 
+    /// Follow the app's resolved UI language, so the Chinese build opens the
+    /// Simplified Chinese pages and every other language opens the English ones.
+    private static let usesSimplifiedChinese = Bundle.main.preferredLocalizations
+        .first?.hasPrefix("zh") ?? false
+    private static var privacyPolicyURL: URL {
+        URL(string: usesSimplifiedChinese
+            ? "https://bellterm.app/zh/privacy/"
+            : "https://bellterm.app/privacy/")!
+    }
+    private static var supportURL: URL {
+        URL(string: usesSimplifiedChinese
+            ? "https://bellterm.app/zh/support/"
+            : "https://bellterm.app/support/")!
+    }
+    private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Bellterm"
+    private static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+
     var body: some View {
         Form {
             Section("Appearance") {
@@ -36,6 +54,14 @@ struct SettingsScreen: View {
                 Link("Herdr", destination: URL(string: "https://herdr.dev/")!)
             } footer: {
                 Text("Bellterm works with Herdr but is not affiliated with, endorsed by, or supported by Herdr or herdr.dev.")
+            }
+            Section("About") {
+                LabeledContent(Self.appName, value: "\(Self.version) (\(Self.build))")
+                Link("Privacy policy", destination: Self.privacyPolicyURL)
+                Link("Support", destination: Self.supportURL)
+            }
+            Section {
+                MadeWithAirBuild()
             }
         }
         .navigationTitle("Settings")
