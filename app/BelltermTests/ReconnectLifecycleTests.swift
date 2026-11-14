@@ -122,7 +122,55 @@ struct ReconnectLifecycleTests {
         #expect(second !== first)
         #expect(second.state == .connected(serverVersion: "test"))
         #expect(!second.retrying)
+        #expect(!model.hasPendingRetry(node.id))
+        #expect(model.pendingRetryAttempts(node.id) == nil)
         #expect(starts == 2)
+    }
+
+    @Test func foregroundDeletedJumpReconnectsInsteadOfRouteChanged() throws {
+        let nodes = store()
+        let jump = keyNode("foreground-jump")
+        var target = keyNode("foreground-target")
+        target.jumpId = jump.id
+        nodes.upsertAll([jump, target])
+        var starts = 0
+        let model = makeModel(nodes: nodes, starts: { starts += 1 })
+
+        let first = model.connect(target, dark: false)
+        model.enterBackground()
+        nodes.delete(jump)
+        model.enterForeground(dark: false)
+
+        let second = try #require(model.connection(target.id))
+        #expect(second !== first)
+        #expect(second.state == .connected(serverVersion: "test"))
+        #expect(!second.retrying)
+        #expect(!model.hasPendingRetry(target.id))
+        #expect(starts == 2)
+    }
+
+    @Test func foregroundMissingJumpSurfacesRouteError() throws {
+        let nodes = store()
+        let jump = keyNode("foreground-missing-jump")
+        var target = keyNode("foreground-missing-target")
+        target.jumpId = jump.id
+        nodes.upsertAll([jump, target])
+        let model = makeModel(nodes: nodes, starts: {})
+
+        let first = model.connect(target, dark: false)
+        model.enterBackground()
+        target.jumpId = "missing-\(UUID().uuidString)"
+        nodes.upsert(target)
+        model.enterForeground(dark: false)
+
+        let replacement = try #require(model.connection(target.id))
+        #expect(replacement !== first)
+        guard case .failed(let reason) = replacement.state else {
+            Issue.record("missing jump must surface a route failure")
+            return
+        }
+        #expect(reason.localizedCaseInsensitiveContains("jump host"))
+        #expect(!model.hasPendingRetry(target.id))
     }
 
     @Test func networkReturnReattachesAndResetsBackoff() async throws {

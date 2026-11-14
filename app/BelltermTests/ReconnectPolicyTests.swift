@@ -69,7 +69,12 @@ struct ReconnectPolicyTests {
         #expect(task.isCancelled)
         model.enterForeground(dark: false)
         let resumed = try #require(model.connection(node.id))
-        #expect(resumed === connection) // invalid route cannot be automatically resumed
+        #expect(resumed !== connection)
+        guard case .failed(let reason) = resumed.state else {
+            Issue.record("resume must surface the real route error")
+            return
+        }
+        #expect(reason.localizedCaseInsensitiveContains("jump host"))
         model.enterForeground(dark: false)
         #expect(model.connection(node.id) === resumed)
         _ = model.scheduleReattach(resumed, after: .seconds(60))

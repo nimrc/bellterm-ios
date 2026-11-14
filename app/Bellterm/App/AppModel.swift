@@ -242,17 +242,25 @@ final class AppModel {
         let nodes = suspended
         suspended = []
         for node in nodes where connections[node.id] != nil {
-            guard let old = connections[node.id],
-                  case .success(let route) = self.nodes.route(self.nodes.get(node.id) ?? node),
-                  Routes.sameRoute(route, old.routeSnapshot) else {
-                connections[node.id]?.fail(String(localized: "The route changed. Choose Reconnect to connect again."))
+            guard let old = connections[node.id] else { continue }
+            let current = self.nodes.get(node.id) ?? node
+            let snapshotIntact = old.routeSnapshot.allSatisfy { self.nodes.get($0.id) != nil }
+            if case .success(let route) = self.nodes.route(current),
+               !old.routeSnapshot.isEmpty,
+               snapshotIntact,
+               !Routes.sameRoute(route, old.routeSnapshot) {
+                old.fail(String(localized: "The route changed. Choose Reconnect to connect again."))
                 continue
             }
-            let connection = reconnect(node, dark: dark)
+            // A missing jump or deleted old hop falls through to a real attempt
+            // so its route error reaches the user.
+            let connection = reconnect(current, dark: dark)
             // Missing credentials/invalid routes require user action, not an empty attempt.
-            if connection.state.isOpen || connection.isDropped {
+            if case .connecting = connection.state {
                 retries[node.id] = Retry()
-                if connection.isDropped { dropped(connection) }
+            } else if connection.isDropped {
+                retries[node.id] = Retry()
+                dropped(connection)
             }
         }
     }
