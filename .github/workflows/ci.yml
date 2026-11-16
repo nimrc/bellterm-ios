@@ -112,4 +112,20 @@ jobs:
           duo = [d for d in phones if "Duo" in d["name"]]
           print((duo or phones)[-1]["udid"])')
           xcodebuild test -project Bellterm.xcodeproj -scheme Bellterm \
-            -destination "id=$destination" CODE_SIGNING_ALLOWED=NO
+            -destination "id=$destination" -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Views the tests rendered, such as StateCardTests' cards.
+      - name: Export rendered views
+        if: always()
+        run: |
+          xcrun xcresulttool export attachments \
+            --path "$RUNNER_TEMP/Tests.xcresult" --output-path "$RUNNER_TEMP/rendered"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: rendered-views
+          path: ${{ runner.temp }}/rendered
+          if-no-files-found: warn
+          retention-days: 14
