@@ -114,9 +114,10 @@ each hop shows the host key's SHA-256 fingerprint for you to compare with
 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on that host before trusting
 it.
 
-The host that runs Herdr needs `/bin/sh` and Herdr 0.9.0 or later in one of
-the usual install locations (for example `~/.local/bin/herdr` or
-`/opt/homebrew/bin/herdr`). Nothing is installed, started, or upgraded on the
+The host that runs Herdr needs `/bin/sh`, or PowerShell on a Windows OpenSSH
+host, and Herdr 0.9.0 or later in one of the usual install locations (for
+example `~/.local/bin/herdr` or `/opt/homebrew/bin/herdr`, or `herdr.exe` on
+`PATH` on Windows). Nothing is installed, started, or upgraded on the
 host: if no Herdr server is running for the session, start one there with
 `herdr`. Jump hosts need only SSH with TCP forwarding allowed.
 
@@ -212,7 +213,6 @@ xcrun devicectl device install app --device <device-udid> \
 - iOS suspends background apps, so attachments close while Bellterm is in the
   background and agent notifications arrive only while it is open.
 - Inline images (Kitty graphics, Sixel) are not drawn yet.
-- Hosts that only offer PowerShell (Windows OpenSSH) are not supported.
 - Generated keys are Ed25519; RSA and ECDSA keys can be imported but not
   generated. FIDO/security-key (`sk-`) keys and SSH agents are not supported.
 - `Match` and `Include` in imported SSH configuration are not evaluated.

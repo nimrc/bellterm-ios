@@ -18,6 +18,9 @@ final class Connection {
         case authRejected(hop: Int, host: String)
         /// The route could not be built, such as a password left unanswered.
         case failed(reason: String)
+        /// No Herdr that this app can use answered on the host, POSIX or
+        /// Windows; reconnecting will not help until one is installed there.
+        case herdrMissing
         /// Herdr on the host and this app cannot work together; updating one
         /// fixes it, not retrying. `daemonOutdated` says which.
         case incompatible(daemonOutdated: Bool, serverVersion: String?, minVersion: String)
@@ -241,6 +244,10 @@ final class Connection {
                 )
             case "auth_rejected":
                 state = .authRejected(hop: e.ints["hop"] ?? 0, host: e.string("host"))
+                finish(session)
+                return true
+            case "herdr_missing":
+                state = .herdrMissing
                 finish(session)
                 return true
             case "host_key":

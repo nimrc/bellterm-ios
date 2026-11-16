@@ -61,6 +61,11 @@ struct StateCard: View {
                    String(localized: "The host runs Herdr \(version), which this version of Bellterm cannot talk to. Update Bellterm."))
         case .failed(let reason):
             return (String(localized: "Could not connect"), reason)
+        case .herdrMissing:
+            return (
+                String(localized: "Herdr is not installed"),
+                String(localized: "No Herdr that Bellterm can use answered on this host. Install Herdr 0.9.0 or newer there (see herdr.dev), then reconnect.")
+            )
         case .untrustedHostKey(let hop, let host, let fingerprint, let changed):
             let named = hop > 0 ? String(localized: "\(host) (hop \(hop + 1))") : host
             return changed

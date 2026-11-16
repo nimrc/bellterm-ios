@@ -85,6 +85,9 @@ pub enum UiEvent {
         hop: usize,
         host: String,
     },
+    /// The host closed the bridge before any Herdr answered: none is
+    /// installed where the bridge looks, or none could report its status.
+    HerdrMissing,
     Disconnected {
         reason: String,
     },
@@ -104,7 +107,7 @@ impl From<VersionMismatch> for UiEvent {
 /// only its own errors, and the connector hands it this one as an opaque
 /// `io::Error`, so it is recognised here before being wrapped.
 /// The connector failures the UI answers with its own prompt, not a plain
-/// disconnect: a host key to trust or a sign-in to retry.
+/// disconnect: a host key to trust, a sign-in to retry, or Herdr to install.
 fn connector_refusal(error: &Error) -> Option<UiEvent> {
     match error {
         Error::UntrustedHostKey {
@@ -122,6 +125,11 @@ fn connector_refusal(error: &Error) -> Option<UiEvent> {
             hop: *hop,
             host: host.clone(),
         }),
+        // A POSIX host without Herdr closes the bridge; a Windows probe says so.
+        Error::Client(
+            herdr_client::Error::SshClosed
+            | herdr_client::Error::SshRefused(herdr_client::SshFailure::HerdrMissing),
+        ) => Some(UiEvent::HerdrMissing),
         _ => None,
     }
 }
@@ -180,6 +188,7 @@ impl UiEvent {
             Self::AuthRejected { hop, host } => {
                 json!({"type": "auth_rejected", "hop": hop, "host": host})
             }
+            Self::HerdrMissing => json!({"type": "herdr_missing"}),
             Self::Disconnected { reason } => json!({"type": "disconnected", "reason": reason}),
         }
         .to_string()
