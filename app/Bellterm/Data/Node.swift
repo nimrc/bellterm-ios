@@ -8,6 +8,10 @@ enum AuthMethod: String, Codable, Sendable, CaseIterable {
 /// A saved SSH server: a machine whose Herdr daemon Bellterm attaches to, or a
 /// jump host on the way to one. A node reached through another names it in
 /// `jumpId`; chains are resolved by `NodeStore.route`.
+///
+/// A node with a `machine` is one of the SSH machines Herdr on its jump host
+/// saved with `herdr machine add`: the jump host's own `ssh` reaches
+/// `machine`, so its address, user, and credentials here are unused.
 struct Node: Codable, Sendable, Identifiable, Hashable {
     var id = UUID().uuidString
     var name: String
@@ -25,15 +29,17 @@ struct Node: Codable, Sendable, Identifiable, Hashable {
     /// SSH keepalive in seconds; 0 turns it off.
     var keepAlive = 15
     var lastUsed: Date = .distantPast
+    /// The SSH target the jump host's Herdr saved this machine under.
+    var machine: String?
 
     var title: String { name.trimmingCharacters(in: .whitespaces).isEmpty ? address : name }
-    var destination: String { port == 22 ? "\(user)@\(address)" : "\(user)@\(address):\(port)" }
+    var destination: String { machine ?? (port == 22 ? "\(user)@\(address)" : "\(user)@\(address):\(port)") }
 
     /// How the known-hosts list names this server, as the SSH layer does.
     var hostKeyName: String { "\(address):\(port)" }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, address, port, user, session, auth, group, color
+        case id, name, address, port, user, session, auth, group, color, machine
         case identityId = "identity"
         case jumpId = "jump"
         case keepAlive = "keepalive"
@@ -62,6 +68,7 @@ struct Node: Codable, Sendable, Identifiable, Hashable {
         color = try c.decodeIfPresent(Int.self, forKey: .color) ?? 0
         keepAlive = try c.decodeIfPresent(Int.self, forKey: .keepAlive) ?? 15
         lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed) ?? .distantPast
+        machine = (try c.decodeIfPresent(String.self, forKey: .machine)).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// Herdr session names are plain path components.

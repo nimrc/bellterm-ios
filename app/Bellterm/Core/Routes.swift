@@ -1,14 +1,18 @@
 import Foundation
 
 /// Builds the route document `native/src/config.rs` reads: every jump host in
-/// order, then the node, each with its pinned host key and credential. Private
+/// order, then the node, each with its pinned host key and credential. A saved
+/// machine is no SSH hop of ours: its jump host's `ssh` relays to it. Private
 /// keys and saved passwords come from the keychain here and go straight to
 /// the core; a password typed for this connection wins.
 @MainActor
 enum Routes {
     enum CredentialError: Error { case missingPassword }
+    /// The nodes in `route` Bellterm itself signs in to.
+    static func sshHops(_ route: [Node]) -> [Node] { route.last?.machine != nil ? Array(route.dropLast()) : route }
+
     /// Nodes in `route` that sign in with a password.
-    static func passwordHops(_ route: [Node]) -> [Node] { route.filter { $0.auth == .password } }
+    static func passwordHops(_ route: [Node]) -> [Node] { sshHops(route).filter { $0.auth == .password } }
 
     /// Password nodes in `route` with no saved password, which must be asked for.
     static func unsavedPasswordHops(_ route: [Node], saved: (Node) -> Bool) -> [Node] {
@@ -18,7 +22,7 @@ enum Routes {
     /// All missing hops, plus a rejected hop even if Keychain still has its old password.
     static func requiredPasswordHops(_ route: [Node], rejectedHop: Int? = nil,
                                      supplied: [String: String] = [:], saved: (Node) -> Bool) -> [Node] {
-        route.enumerated().compactMap { index, node in
+        sshHops(route).enumerated().compactMap { index, node in
             guard node.auth == .password, supplied[node.id]?.isEmpty != false,
                   index == rejectedHop || !saved(node) else { return nil }
             return node
@@ -35,10 +39,11 @@ enum Routes {
             let session: String
             let auth: AuthMethod
             let jumpId: String?
+            let machine: String?
         }
         func hops(_ route: [Node]) -> [Hop] {
             route.map { Hop(address: $0.address, port: $0.port, user: $0.user,
-                            session: $0.session, auth: $0.auth, jumpId: $0.jumpId) }
+                            session: $0.session, auth: $0.auth, jumpId: $0.jumpId, machine: $0.machine) }
         }
         return hops(lhs) == hops(rhs)
     }
@@ -55,7 +60,7 @@ enum Routes {
         guard requiredPasswordHops(route, supplied: passwords, saved: {
             keychain.password(nodeId: $0.id)?.isEmpty == false
         }).isEmpty else { throw CredentialError.missingPassword }
-        let hops: [[String: Any]] = route.map { node in
+        let hops: [[String: Any]] = sshHops(route).map { node in
             let auth: [String: Any] = switch node.auth {
             case .password:
                 ["type": "password", "password": passwords[node.id] ?? keychain.password(nodeId: node.id) ?? ""]
@@ -77,6 +82,7 @@ enum Routes {
         let document: [String: Any] = [
             "session": target.session,
             "hops": hops,
+            "relay": target.machine ?? NSNull(),
             "keepalive_secs": target.keepAlive,
             "cols": grid.cols,
             "rows": grid.rows,

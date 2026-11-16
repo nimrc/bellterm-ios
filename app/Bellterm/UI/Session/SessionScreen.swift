@@ -27,6 +27,8 @@ enum Prompt: Identifiable {
 struct SessionScreen: View {
     let app: AppModel
     let node: Node
+    /// Shows another node's session, such as a machine from the sidebar.
+    var onOpen: (Node) -> Void = { _ in }
     let onLeave: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -41,6 +43,36 @@ struct SessionScreen: View {
     @State private var tabletop = false
 
     private var connection: Connection? { app.connection(node.id) }
+    /// What the host's Herdr listed; nil until it answered.
+    @State private var listed: [Machine]?
+
+    /// The host whose Herdr saved this node's machine, or the node itself.
+    private var host: Node? { node.machine == nil ? node : app.nodes.get(node.jumpId) }
+
+    /// Listed machines, then ones saved before that this listing lacks, so a
+    /// host that cannot list them now still offers the way back.
+    private var machineRows: [MachineRow] {
+        guard let host else { return [] }
+        let saved = app.nodes.nodes.filter { $0.machine != nil && $0.jumpId == host.id }
+            .map { Machine(label: $0.title, target: $0.machine ?? "", session: $0.session) }
+        var seen = Set<String>()
+        let machines = ((listed ?? []) + saved).filter { seen.insert("\($0.target) \($0.session)").inserted }
+        guard !machines.isEmpty else { return [] }
+        return [MachineRow(id: host.id, label: host.title, target: host.destination, session: host.session,
+                           color: host.color, current: node.id == host.id)]
+            + machines.map {
+                MachineRow(id: "\($0.target) \($0.session)", label: $0.label, target: $0.target, session: $0.session,
+                           color: host.color, current: node.machine == $0.target && node.session == $0.session)
+            }
+    }
+
+    private func open(_ row: MachineRow) {
+        guard let host, !row.current else { column = .detail; return }
+        let target = row.id == host.id
+            ? host : app.nodes.machine(host: host, label: row.label, target: row.target, session: row.session)
+        if app.connection(target.id)?.isOpen != true { app.connect(target, dark: dark) }
+        onOpen(target)
+    }
     private var dark: Bool { colorScheme == .dark }
 
     var body: some View {
@@ -79,8 +111,14 @@ struct SessionScreen: View {
                 onRenameWorkspace: { ask(.renameWorkspace(id: $0.id, label: $0.label)) },
                 onCloseWorkspace: { ask(.closeWorkspace(id: $0.id, label: $0.label)) },
                 onAgent: { connection?.focusPane($0.pane); column = .detail },
-                onNewWorkspace: { connection?.newWorkspace(source: connection?.view?.workspace?.id); column = .detail }
+                onNewWorkspace: { connection?.newWorkspace(source: connection?.view?.workspace?.id); column = .detail },
+                machines: machineRows,
+                onMachine: open
             )
+            .task(id: host?.id) {
+                guard let host, listed == nil else { return }
+                listed = try? await app.machines(host: host)
+            }
             .navigationTitle(node.title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

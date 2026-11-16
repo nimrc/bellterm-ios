@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Herdr's sidebar: every workspace with its branch and the daemon's status
-/// dot, and every agent. Tabs are switched from the session's tab strip.
+/// dot, and every agent. Tabs are switched from the session's tab strip. Like
+/// Herdr's own client, it also lists the host and the SSH machines its Herdr
+/// saved, each a session of its own.
 struct SessionSidebar: View {
     let node: Node
     let view: ShellView?
@@ -10,6 +12,9 @@ struct SessionSidebar: View {
     let onCloseWorkspace: (Workspace) -> Void
     let onAgent: (Agent) -> Void
     let onNewWorkspace: () -> Void
+    /// The host first, then its machines; empty when it saved none.
+    var machines: [MachineRow] = []
+    var onMachine: (MachineRow) -> Void = { _ in }
 
     var body: some View {
         List {
@@ -65,6 +70,24 @@ struct SessionSidebar: View {
                     }
                 }
             }
+            if !machines.isEmpty {
+                Section("Machines") {
+                    ForEach(machines) { machine in
+                        Button { onMachine(machine) } label: {
+                            HStack(spacing: 12) {
+                                NodeAvatar(title: machine.label, color: machine.color, size: 24)
+                                VStack(alignment: .leading) {
+                                    Text(machine.label).lineLimit(1)
+                                    Text(machine.target + (machine.session == "default" ? "" : " · \(machine.session)"))
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                        }
+                        .listRowBackground(machine.current ? Color.accentColor.opacity(0.15) : nil)
+                        .accessibilityIdentifier("machine:\(machine.label)")
+                    }
+                }
+            }
         }
         .tint(.primary)
     }
@@ -77,6 +100,16 @@ struct SessionSidebar: View {
         if workspace.linkedWorktree, let worktree = workspace.worktree { parts.append("⎇ \(worktree)") }
         return parts.isEmpty ? nil : parts.joined(separator: "  ")
     }
+}
+
+/// A host or one of its saved machines in the sidebar; `current` is this session's.
+struct MachineRow: Identifiable, Equatable {
+    var id: String
+    var label: String
+    var target: String
+    var session: String
+    var color: Int
+    var current: Bool
 }
 
 extension AgentStatus {
