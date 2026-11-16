@@ -9,7 +9,7 @@
 use bellterm::{
     config,
     input::Touch,
-    keys,
+    keys, machines,
     session::{self, Session as Core},
     ssh_config,
     theme::Theme,
@@ -106,6 +106,16 @@ pub fn certificate_info(certificate: String, private_key: String) -> Result<Stri
 }
 
 /// `{"entries": […], "skipped": […]}` from OpenSSH client configuration text.
+/// The enabled SSH machines Herdr on the route document's last host saved, as
+/// a JSON array of `{id, label, target, session, enabled}`. Blocks for up to
+/// half a minute: never call it on the main thread.
+#[uniffi::export]
+pub fn list_machines(config_json: String) -> Result<String> {
+    let config_json = Zeroizing::new(config_json);
+    let listed = machines::list(config::parse(&config_json)?.route)?;
+    Ok(serde_json::to_string(&listed)?)
+}
+
 #[uniffi::export]
 pub fn parse_ssh_config(text: String) -> Result<String> {
     Ok(serde_json::to_string(&ssh_config::parse(&text))?)

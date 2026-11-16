@@ -47,6 +47,13 @@ View.
 - **Jump hosts.** A node can name another node as its jump host, which can have
   its own, as `ssh -J a,b host` does. Every hop's host key is checked and
   trusted separately; the trust prompt names the hop.
+- **Herdr's saved machines.** When Herdr on a host has saved SSH machines
+  with `herdr machine add`, the session sidebar lists them under **Machines**
+  with the host itself, as Herdr's own sidebar does. Tapping one opens its
+  session, reached through the host: the host's own `ssh` signs in to the
+  machine with its keys, configuration, and known hosts, so the machine needs
+  nothing new from the phone. Each machine is saved as a node shown *via* its
+  host, and is removed along with the host.
 - **Keys and certificates.** **Keys & certificates** holds the device key
   generated on the phone, generated keys, and imported OpenSSH private keys
   (RSA, ECDSA, Ed25519; a passphrase is used once to decrypt). Private keys are

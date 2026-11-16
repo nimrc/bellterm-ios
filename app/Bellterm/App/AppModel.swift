@@ -144,6 +144,21 @@ final class AppModel {
         return connection
     }
 
+    /// The machines Herdr on `host` saved, listed over a connection of their
+    /// own with saved passwords only.
+    func machines(host: Node) async throws -> [Machine] {
+        let route = try nodes.route(host).get()
+        if route.contains(where: { $0.auth == .key }) {
+            _ = try keychain.deviceIdentity(name: String(localized: "This device"))
+        }
+        let document = try Routes.document(
+            route: route, nodes: nodes, keychain: keychain, passwords: [:],
+            grid: settings.lastGrid, scheme: settings.scheme(dark: dark)
+        )
+        let json = try await Task.detached { try listMachines(configJson: document) }.value
+        return try Machine.parse(json)
+    }
+
     /// Nodes on `node`'s route that sign in with a password and have none saved.
     func passwordsToAsk(_ node: Node, rejectedHop: Int? = nil) -> [Node] {
         guard case .success(let route) = nodes.route(node) else { return [] }

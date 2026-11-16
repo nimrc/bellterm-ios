@@ -981,6 +981,16 @@
         }
       }
     },
+    "Machines" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "机器"
+          }
+        }
+      }
+    },
     "Made with AirBuild" : {
       "comment" : "Credit at the bottom of Settings. Keep the name AirBuild as is.",
       "localizations" : {

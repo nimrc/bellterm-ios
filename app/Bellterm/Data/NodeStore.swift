@@ -65,9 +65,10 @@ final class NodeStore {
         save()
     }
 
-    /// Removes the node; nodes that jumped through it now connect directly.
+    /// Removes the node with the machines it saved, which only it can reach;
+    /// other nodes that jumped through it now connect directly.
     func delete(_ node: Node) {
-        nodes = nodes.filter { $0.id != node.id }.map {
+        nodes = nodes.filter { $0.id != node.id && !($0.machine != nil && $0.jumpId == node.id) }.map {
             var other = $0
             if other.jumpId == node.id { other.jumpId = nil }
             return other
@@ -96,10 +97,26 @@ final class NodeStore {
         return .success(chain)
     }
 
-    /// Nodes that may serve as `node`'s jump host without making a loop.
+    /// The node for `host`'s saved machine `target` and `session`, added when new.
+    func machine(host: Node, label: String, target: String, session: String) -> Node {
+        if let saved = nodes.first(where: { $0.jumpId == host.id && $0.machine == target && $0.session == session }) {
+            return saved
+        }
+        var node = Node(name: label, address: target, user: host.user)
+        node.session = session
+        node.jumpId = host.id
+        node.group = host.group
+        node.color = host.color
+        node.keepAlive = host.keepAlive
+        node.machine = target
+        upsert(node)
+        return node
+    }
+
+    /// Nodes that may serve as `node`'s jump host without making a loop; never a saved machine.
     func jumpCandidates(for node: Node?) -> [Node] {
         nodes.filter { candidate in
-            guard candidate.id != node?.id else { return false }
+            guard candidate.id != node?.id, candidate.machine == nil else { return false }
             var here: Node? = candidate
             for _ in 0..<Node.maxHops {
                 guard let current = here else { return true }

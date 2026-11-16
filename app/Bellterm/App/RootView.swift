@@ -20,7 +20,7 @@ struct RootView: View {
     var body: some View {
         NodesScreen(app: app, session: $session)
             .fullScreenCover(item: $session) { node in
-                SessionScreen(app: app, node: node) { session = nil }
+                SessionScreen(app: app, node: node, onOpen: { session = $0 }) { session = nil }
                     .preferredColorScheme(preferred)
             }
             .preferredColorScheme(preferred)

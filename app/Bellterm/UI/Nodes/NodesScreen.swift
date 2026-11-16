@@ -137,7 +137,10 @@ struct NodesScreen: View {
         }
         .swipeActions {
             Button("Delete", systemImage: "trash", role: .destructive) { deleting = node }
-            Button("Edit", systemImage: "pencil") { editing = .edit(node) }.tint(.orange)
+            // A saved machine is defined by its host's Herdr, not here.
+            if node.machine == nil {
+                Button("Edit", systemImage: "pencil") { editing = .edit(node) }.tint(.orange)
+            }
         }
         .contextMenu {
             Button("Edit", systemImage: "pencil") { editing = .edit(node) }
