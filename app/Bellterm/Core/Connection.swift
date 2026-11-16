@@ -57,6 +57,7 @@ final class Connection {
         case .authRejected: "authentication"
         case .failed: "route_or_credentials"
         case .incompatible: "incompatible"
+        case .herdrMissing: "herdr_missing"
         }
     }
     @ObservationIgnored var onStop: (() -> Void)?
@@ -67,7 +68,7 @@ final class Connection {
         didSet {
             Self.log.info("state id=\(self.diagnosticID) category=\(self.diagnosticCategory)")
             switch state {
-            case .failed, .authRejected, .untrustedHostKey, .incompatible: onStop?()
+            case .failed, .authRejected, .untrustedHostKey, .incompatible, .herdrMissing: onStop?()
             default: break
             }
         }
