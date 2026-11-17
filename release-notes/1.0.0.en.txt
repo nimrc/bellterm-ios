@@ -1,0 +1,3 @@
+The first beta: attach to Herdr over SSH, with jump hosts, keys, certificates and passwords.
+Workspaces, tabs, panes and agents as Herdr shows them, with agent notifications while Bellterm is open.
+Layouts for iPhone Duo, folded and unfolded.

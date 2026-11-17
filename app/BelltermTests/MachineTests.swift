@@ -69,33 +69,9 @@ struct MachineTests {
             node: host, view: nil, onWorkspace: { _ in }, onRenameWorkspace: { _ in }, onCloseWorkspace: { _ in },
             onAgent: { _ in }, onNewWorkspace: {}, machines: rows
         )
-        // Only a window in a scene draws; the test host app has one.
-        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 402, height: 640)
-        window.overrideUserInterfaceStyle = style
-        window.rootViewController = UIHostingController(rootView: NavigationStack { sidebar.navigationTitle("e2e-host") })
-        window.makeKeyAndVisible()
-        RunLoop.main.run(until: .now + 2)
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        window.isHidden = true
-        #expect(Self.colours(in: image) > 2, "the sidebar drew nothing")
-        let png = try #require(image.pngData())
-        Attachment.record(png, named: "sidebar-machines-\(style == .dark ? "dark" : "light").png")
-    }
-
-    /// Distinct colours in `image`, sampled on a coarse grid.
-    private static func colours(in image: UIImage) -> Int {
-        guard let cg = image.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return 0 }
-        var seen = Set<UInt32>()
-        for y in stride(from: 0, to: cg.height, by: 16) {
-            for x in stride(from: 0, to: cg.width, by: 16) {
-                let offset = y * cg.bytesPerRow + x * (cg.bitsPerPixel / 8)
-                seen.insert(UInt32(bytes[offset]) << 16 | UInt32(bytes[offset + 1]) << 8 | UInt32(bytes[offset + 2]))
-            }
-        }
-        return seen.count
+        let drawn = try snapshot(
+            NavigationStack { sidebar.navigationTitle("e2e-host") }, named: "sidebar-machines", style: style
+        )
+        #expect(drawn > 2, "the sidebar drew nothing")
     }
 }

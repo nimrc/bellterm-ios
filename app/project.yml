@@ -10,7 +10,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "1.0.0"
+    MARKETING_VERSION: "1.1.0"
     CURRENT_PROJECT_VERSION: "5"
     SWIFT_EMIT_LOC_STRINGS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
@@ -25,6 +25,10 @@ targets:
       - path: Generated/Swift
         group: Generated
       - path: Generated/fonts
+        type: folder
+        buildPhase: resources
+      # Each release's notes, for Settings > What's new.
+      - path: ../release-notes
         type: folder
         buildPhase: resources
     dependencies:
