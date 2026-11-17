@@ -57,6 +57,7 @@ struct SettingsScreen: View {
             }
             Section("About") {
                 LabeledContent(Self.appName, value: "\(Self.version) (\(Self.build))")
+                NavigationLink("What's new") { WhatsNewScreen() }
                 Link("Privacy policy", destination: Self.privacyPolicyURL)
                 Link("Support", destination: Self.supportURL)
             }

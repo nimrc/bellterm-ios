@@ -215,6 +215,14 @@ xcrun devicectl device install app --device <device-udid> \
   ~/Library/Developer/Xcode/DerivedData/Bellterm-*/Build/Products/Debug-iphoneos/Bellterm.app
 ```
 
+### Release notes
+
+`release-notes/<version>.en.txt` and `.zh.txt`, one line per change, are
+bundled into the app and shown in **Settings → What's new**, newest first,
+with the installed version marked. Before a TestFlight build with a new
+`MARKETING_VERSION` (`app/project.yml`), add its notes; a test fails when the
+version being built has none.
+
 ## Limitations
 
 - iOS suspends background apps, so attachments close while Bellterm is in the

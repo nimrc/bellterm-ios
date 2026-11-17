@@ -1,0 +1,5 @@
+A session that drops after a network change reattaches by itself.
+Connect to Windows hosts over OpenSSH, whether their shell is cmd.exe or PowerShell.
+A host without a usable Herdr now says so instead of just disconnecting.
+The sidebar lists the SSH machines a host's Herdr saved with herdr machine add. Tap one to open its workspaces, reached through that host.
+Settings has a What's new page listing each release's changes.

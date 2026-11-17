@@ -89,6 +89,16 @@
         }
       }
     },
+    "%@ · installed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 当前版本"
+          }
+        }
+      }
+    },
     "%lld" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1764,6 +1774,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "经 %@"
+          }
+        }
+      }
+    },
+    "What's new" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志"
           }
         }
       }
